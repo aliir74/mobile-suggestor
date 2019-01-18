@@ -22,6 +22,61 @@ from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, Rege
                           ConversationHandler)
 
 import logging
+import pandas as pd
+db = 0
+
+import decimal
+
+def drange(x, y, jump):
+    while x < y:
+        yield float(x)
+        x += decimal.Decimal(jump)
+
+def load_db(file):
+    global db
+    xl = pd.ExcelFile(file)
+    db = xl.parse('Sheet1')
+
+def map_word_to_number(word):
+    map = {
+        'یک': 1,
+        'دو': 2,
+        'سه': 3,
+        'چهار': 4,
+        'پنج': 5,
+        'شش': 6,
+        'هفت': 7,
+        'هشت': 8,
+        'نه': 9,
+        'ده': 10,
+        'یازده': 11,
+        'دوازده': 12,
+        'سیزده': 13,
+        'چهارده': 14,
+        'پانزده': 15,
+        'شانزده': 16,
+        'هفده': 17,
+        'هجده': 18
+    }
+    return map[word]
+
+def find_mobiles(data):
+    res = db.copy()
+    if 'name' in data:
+        res = res[res.name == data['name']]
+    if 'brand' in data:
+        res = res[res.brand == data['brand']]
+    if 'price' in data:
+        valid_prices = range(data['price'], data['price']+1000000)
+        res = res[res.toman.isin(valid_prices)]
+    if 'size' in data:
+        minsize, maxsize = data['size'].split('-')
+        res = res[(res['size'] >= float(minsize)) & (res['size'] < float(maxsize))]
+    if 'storage' in data:
+        res = res[res.storage == data['storage']]
+    if 'color' in data:
+        res.color.iloc[[0]] = data['color']
+    return res
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,8 +84,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-BRAND, PRICE, LOCATION, BIO = range(4)
-
+BRAND, PRICE, COLOR, SIZE, STORAGE, NAME = range(6)
 
 def start(bot, update):
     reply_keyboard = [['سامسونگ', 'اپل', 'ال‌جی', 'گوگل', 'هواوی', 'اچ‌تی‌سی', 'نوکیا', 'شیائومی']]
@@ -43,68 +97,129 @@ def start(bot, update):
     return BRAND
 
 
-def gender(bot, update):
+def brand(bot, update, user_data):
     user = update.message.from_user
-    logger.info("Gender of %s: %s", user.first_name, update.message.text)
-    update.message.reply_text('I see! Please send me a photo of yourself, '
-                              'so I know what you look like, or send /skip if you don\'t want to.',
+    logger.info("Brand of %s: %s", user.first_name, update.message.text)
+    user_data['brand'] = update.message.text
+    update.message.reply_text('حالا محدوده‌ی قیمتی که مد نظرته رو بهم بگو!',
                               reply_markup=ReplyKeyboardRemove())
 
-    return PHOTO
+    return PRICE
 
 
-def photo(bot, update):
+def price(bot, update, user_data):
     user = update.message.from_user
-    photo_file = bot.get_file(update.message.photo[-1].file_id)
-    photo_file.download('user_photo.jpg')
-    logger.info("Photo of %s: %s", user.first_name, 'user_photo.jpg')
-    update.message.reply_text('Gorgeous! Now, send me your location please, '
-                              'or send /skip if you don\'t want to.')
+    logger.info("Price of %s: %s", user.first_name, update.message.text)
+    milion = update.message.text.split()[0]
 
-    return LOCATION
+    if (milion == 'زیر یک میلیون'):
+        user_data['price'] = 0
+    else:
+        user_data['price'] = map_word_to_number(milion)*1000000
 
+    res = find_mobiles(data=user_data)
+    if len(res) == 1:
+        colors = res.iloc[0]['color']
+        colors = [colors.replace(' ', '').split(',')]
+        update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
+                                  res.iloc[0]['name']+'\n'+
+                                  'چه رنگی مد نظر شماست؟',
+                                  reply_markup=ReplyKeyboardMarkup(colors, one_time_keyboard=True)
+                                  )
+        return COLOR
+    else:
+        update.message.reply_text('چه سایزی مد نظر شماست؟',
+                                  reply_markup=ReplyKeyboardRemove())
+        return SIZE
 
-def skip_photo(bot, update):
+def color(bot, update, user_data):
     user = update.message.from_user
-    logger.info("User %s did not send a photo.", user.first_name)
-    update.message.reply_text('I bet you look great! Now, send me your location please, '
-                              'or send /skip.')
+    logger.info("Color of %s: %s", user.first_name, update.message.text)
+    user_data['color'] = update.message.text
 
-    return LOCATION
+    res = find_mobiles(data=user_data)
+    res = (res.to_dict('records')[0])
+    ans = ''
+    for key in res:
+        if key not in ['Unnamed: 9', 'Conversion rate']:
+            ans += key + ": " + str(res[key]) + '\n'
+    update.message.reply_text('موبایل مورد نظر شما:\n'+
+                              ans,
+                              )
 
-
-def location(bot, update):
+def size(bot, update, user_data):
     user = update.message.from_user
-    user_location = update.message.location
-    logger.info("Location of %s: %f / %f", user.first_name, user_location.latitude,
-                user_location.longitude)
-    update.message.reply_text('Maybe I can visit you sometime! '
-                              'At last, tell me something about yourself.')
+    logger.info("Size of %s: %s", user.first_name, update.message.text)
+    inch = update.message.text
 
-    return BIO
+    if inch == '4':
+        user_data['size'] = '4-5'
+    elif inch == '5':
+        user_data['size'] = '5-6'
+    elif inch == '6':
+        user_data['size'] = '6-8'
+    elif inch == '8':
+        user_data['size'] = '8-10'
+    elif inch == '10':
+        user_data['size'] = '10-100'
+    res = find_mobiles(data=user_data)
+    if len(res) == 1:
+        colors = res.iloc[0]['color']
+        colors = [colors.replace(' ', '').split(',')]
+        update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
+                                  res.iloc[0]['name']+'\n'+
+                                  'چه رنگی مد نظر شماست؟',
+                                  reply_markup=ReplyKeyboardMarkup(colors, one_time_keyboard=True)
+                                  )
+        return COLOR
+    else:
+        storages = set(list(res['storage']))
+        storages = [(str(i) for i in storages)]
+        update.message.reply_text('چه مقدار حافظه داخلی مد نظر شماست؟',
+                                  reply_markup=ReplyKeyboardMarkup(storages, one_time_keyboard=True))
+        return STORAGE
 
-
-def skip_location(bot, update):
+def storage(bot, update, user_data):
     user = update.message.from_user
-    logger.info("User %s did not send a location.", user.first_name)
-    update.message.reply_text('You seem a bit paranoid! '
-                              'At last, tell me something about yourself.')
+    logger.info("Storage of %s: %s", user.first_name, update.message.text)
+    user_data['storage'] = int(update.message.text)
 
-    return BIO
+    res = find_mobiles(data=user_data)
+    if len(res) == 1:
+        colors = res.iloc[0]['color']
+        colors = [colors.replace(' ', '').split(',')]
+        update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
+                                  res.iloc[0]['name']+'\n'+
+                                  'چه رنگی مد نظر شماست؟',
+                                  reply_markup=ReplyKeyboardMarkup(colors, one_time_keyboard=True)
+                                  )
+        return COLOR
+    else:
+        names = [list(res['name'])]
+        update.message.reply_text('گوشی مورد نظر خود را انتخاب کنید.',
+                                  reply_markup=ReplyKeyboardMarkup(names, one_time_keyboard=True))
+        return NAME
 
-
-def bio(bot, update):
+def name(bot, update, user_data):
     user = update.message.from_user
-    logger.info("Bio of %s: %s", user.first_name, update.message.text)
-    update.message.reply_text('Thank you! I hope we can talk again some day.')
+    logger.info("Name of %s: %s", user.first_name, update.message.text)
+    user_data['name'] = update.message.text
 
-    return ConversationHandler.END
+    res = find_mobiles(data=user_data)
+    colors = res.iloc[0]['color']
+    colors = [colors.replace(' ', '').split(',')]
+    update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
+                              res.iloc[0]['name']+'\n'+
+                              'چه رنگی مد نظر شماست؟',
+                              reply_markup=ReplyKeyboardMarkup(colors, one_time_keyboard=True)
+                              )
+    return COLOR
 
 
 def cancel(bot, update):
     user = update.message.from_user
     logger.info("User %s canceled the conversation.", user.first_name)
-    update.message.reply_text('Bye! I hope we can talk again some day.',
+    update.message.reply_text('تا دیدار بعدی :)',
                               reply_markup=ReplyKeyboardRemove())
 
     return ConversationHandler.END
@@ -128,17 +243,18 @@ def main():
     # Add conversation handler with the states GENDER, PHOTO, LOCATION and BIO
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
-
         states={
-            GENDER: [RegexHandler('^(Boy|Girl|Other)$', gender)],
+            BRAND: [RegexHandler('^(سامسونگ|اپل|ال‌جی|گوگل|هواوی|اچ‌تی‌سی|نوکیا|شیائومی)$', brand, pass_user_data=True)],
 
-            PHOTO: [MessageHandler(Filters.photo, photo),
-                    CommandHandler('skip', skip_photo)],
+            PRICE: [MessageHandler(Filters.text, price, pass_user_data=True)],
 
-            LOCATION: [MessageHandler(Filters.location, location),
-                       CommandHandler('skip', skip_location)],
+            COLOR: [MessageHandler(Filters.text, color, pass_user_data=True)],
 
-            BIO: [MessageHandler(Filters.text, bio)]
+            SIZE: [MessageHandler(Filters.text, size, pass_user_data=True)],
+
+            STORAGE: [MessageHandler(Filters.text, storage, pass_user_data=True)],
+
+            NAME: [MessageHandler(Filters.text, name, pass_user_data=True)]
         },
 
         fallbacks=[CommandHandler('cancel', cancel)]
@@ -159,4 +275,5 @@ def main():
 
 
 if __name__ == '__main__':
+    load_db('database.xlsx')
     main()
