@@ -25,13 +25,6 @@ import logging
 import pandas as pd
 db = 0
 
-import decimal
-
-def drange(x, y, jump):
-    while x < y:
-        yield float(x)
-        x += decimal.Decimal(jump)
-
 def load_db(file):
     global db
     xl = pd.ExcelFile(file)
@@ -74,7 +67,7 @@ def find_mobiles(data):
         res = res[(res['size'] >= float(minsize)) & (res['size'] < float(maxsize))]
     if 'storage' in data:
         res = res[res.storage == data['storage']]
-    if 'color' in data:
+    if len(res) > 0 and 'color' in data:
         res.color.iloc[[0]] = data['color']
     return res
 
@@ -85,19 +78,19 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 BRAND, PRICE, COLOR, SIZE, STORAGE, NAME = range(6)
+brands = [['سامسونگ', 'اپل', 'ال جی', 'گوگل'],['هواوی', 'اچ تی سی', 'نوکیا', 'شیائومی']]
 
 def start(bot, update):
-    reply_keyboard = [['سامسونگ', 'اپل', 'ال‌جی', 'گوگل', 'هواوی', 'اچ‌تی‌سی', 'نوکیا', 'شیائومی']]
 
     update.message.reply_text(
-        'سلام. من ربات تلگرام پیشنهاد دهنده‌ی موبایلم!'
+        'سلام. من ربات تلگرام پیشنهاد دهنده‌ی موبایلم!\n'
         'چه برند موبایلی مد نظرتونه؟',
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True))
+        reply_markup=ReplyKeyboardMarkup(brands, one_time_keyboard=True))
 
     return BRAND
 
-
 def brand(bot, update, user_data):
+    user_data.clear()
     user = update.message.from_user
     logger.info("Brand of %s: %s", user.first_name, update.message.text)
     user_data['brand'] = update.message.text
@@ -118,9 +111,14 @@ def price(bot, update, user_data):
         user_data['price'] = map_word_to_number(milion)*1000000
 
     res = find_mobiles(data=user_data)
-    if len(res) == 1:
+    if len(res) == 0:
+        update.message.reply_text('موبایل مورد نظر شما پیدا نشد. یه محدوده‌ی قیمت جدید بهم بگو',
+                                  )
+        return PRICE
+    elif len(res) == 1:
         colors = res.iloc[0]['color']
         colors = [colors.replace(' ', '').split(',')]
+        user_data['valid_colors'] = colors[0]
         update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
                                   res.iloc[0]['name']+'\n'+
                                   'چه رنگی مد نظر شماست؟',
@@ -136,6 +134,10 @@ def color(bot, update, user_data):
     user = update.message.from_user
     logger.info("Color of %s: %s", user.first_name, update.message.text)
     user_data['color'] = update.message.text
+    if user_data['color'] not in user_data['valid_colors']:
+        update.message.reply_text('موبایل مورد نظر شما پیدا نشد. یه رنگ جدید از اونایی که بهت پیشنهاد دادم بهم بگو',
+                                  )
+        return COLOR
 
     res = find_mobiles(data=user_data)
     res = (res.to_dict('records')[0])
@@ -146,6 +148,7 @@ def color(bot, update, user_data):
     update.message.reply_text('موبایل مورد نظر شما:\n'+
                               ans,
                               )
+    return ConversationHandler.END
 
 def size(bot, update, user_data):
     user = update.message.from_user
@@ -163,9 +166,13 @@ def size(bot, update, user_data):
     elif inch == '10':
         user_data['size'] = '10-100'
     res = find_mobiles(data=user_data)
-    if len(res) == 1:
+    if len(res) == 0:
+        update.message.reply_text('موبایل مورد نظر شما پیدا نشد. یه سایز جدید بهم بگو')
+        return SIZE
+    elif len(res) == 1:
         colors = res.iloc[0]['color']
         colors = [colors.replace(' ', '').split(',')]
+        user_data['valid_colors'] = colors[0]
         update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
                                   res.iloc[0]['name']+'\n'+
                                   'چه رنگی مد نظر شماست؟',
@@ -185,9 +192,13 @@ def storage(bot, update, user_data):
     user_data['storage'] = int(update.message.text)
 
     res = find_mobiles(data=user_data)
-    if len(res) == 1:
+    if len(res) == 0:
+        update.message.reply_text('موبایل مورد نظر شما پیدا نشد. یک حافظه‌ی مورد نظر جدید از اونایی که بهت پیشنهاد دادم بهم بگو.')
+        return STORAGE
+    elif len(res) == 1:
         colors = res.iloc[0]['color']
         colors = [colors.replace(' ', '').split(',')]
+        user_data['valid_colors'] = colors[0]
         update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
                                   res.iloc[0]['name']+'\n'+
                                   'چه رنگی مد نظر شماست؟',
@@ -206,8 +217,12 @@ def name(bot, update, user_data):
     user_data['name'] = update.message.text
 
     res = find_mobiles(data=user_data)
+    if (len(res) == 0):
+        update.message.reply_text('موبایل مورد نظر شما پیدا نشد. یک اسم جدید از اونایی که بهت پیشنهاد دادم بهم بگو.')
+        return NAME
     colors = res.iloc[0]['color']
     colors = [colors.replace(' ', '').split(',')]
+    user_data['valid_colors'] = colors[0]
     update.message.reply_text('موبایل مورد نظر شما پیدا شد:\n'+
                               res.iloc[0]['name']+'\n'+
                               'چه رنگی مد نظر شماست؟',
@@ -244,7 +259,8 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            BRAND: [RegexHandler('^(سامسونگ|اپل|ال‌جی|گوگل|هواوی|اچ‌تی‌سی|نوکیا|شیائومی)$', brand, pass_user_data=True)],
+            BRAND: [RegexHandler('^(سامسونگ|اپل|ال جی|گوگل|هواوی|اچ تی سی|نوکیا|شیائومی)$', brand, pass_user_data=True)],
+            # BRAND: [MessageHandler(Filters.text, brand, pass_user_data=True)],
 
             PRICE: [MessageHandler(Filters.text, price, pass_user_data=True)],
 
