@@ -29,19 +29,18 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-GENDER, PHOTO, LOCATION, BIO = range(4)
+BRAND, PRICE, LOCATION, BIO = range(4)
 
 
 def start(bot, update):
-    reply_keyboard = [['Boy', 'Girl', 'Other']]
+    reply_keyboard = [['سامسونگ', 'اپل', 'ال‌جی', 'گوگل', 'هواوی', 'اچ‌تی‌سی', 'نوکیا', 'شیائومی']]
 
     update.message.reply_text(
-        'Hi! My name is Professor Bot. I will hold a conversation with you. '
-        'Send /cancel to stop talking to me.\n\n'
-        'Are you a boy or a girl?',
+        'سلام. من ربات تلگرام پیشنهاد دهنده‌ی موبایلم!'
+        'چه برند موبایلی مد نظرتونه؟',
         reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True))
 
-    return GENDER
+    return BRAND
 
 
 def gender(bot, update):
